@@ -1,0 +1,268 @@
+#include <Wire.h>
+ 
+#define    MPU9250_ADDRESS            0x68
+#define    MAG_ADDRESS                0x0C
+ 
+#define    GYRO_FULL_SCALE_250_DPS    0x00  
+#define    GYRO_FULL_SCALE_500_DPS    0x08
+#define    GYRO_FULL_SCALE_1000_DPS   0x10
+#define    GYRO_FULL_SCALE_2000_DPS   0x18
+ 
+#define    ACC_FULL_SCALE_2_G        0x00  
+#define    ACC_FULL_SCALE_4_G        0x08
+#define    ACC_FULL_SCALE_8_G        0x10
+#define    ACC_FULL_SCALE_16_G       0x18
+
+
+
+
+int16_t Tmp;
+
+int16_t  mx, my, mz;
+
+int16_t acc_x, acc_y, acc_z;
+
+int16_t gyro_x, gyro_y, gyro_z; 
+
+float Gyr_Sec_X, Gyr_Sec_Y, Gyr_Sec_Z;
+
+float Gyr_Ang_X, Gyr_Ang_Y, Gyr_Ang_Z;
+
+float elapsedTime, time, timePrev;
+
+float angle_roll_acc, angle_pitch_acc, Pitch, Roll;
+
+float heading;
+
+int16_t Declination = 3;
+
+float yM2, xM2;
+
+
+ 
+// This function read Nbytes bytes from I2C device at address Address. 
+// Put read bytes starting at register Register in the Data array. 
+void I2Cread(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data)
+{
+  // Set register address
+  Wire.beginTransmission(Address);
+  Wire.write(Register);
+  Wire.endTransmission();
+ 
+  // Read Nbytes
+  Wire.requestFrom(Address, Nbytes); 
+  uint8_t index=0;
+  while (Wire.available())
+    Data[index++]=Wire.read();
+}
+ 
+ 
+// Write a byte (Data) in device (Address) at register (Register)
+void I2CwriteByte(uint8_t Address, uint8_t Register, uint8_t Data)
+{
+  // Set register address
+  Wire.beginTransmission(Address);
+  Wire.write(Register);
+  Wire.write(Data);
+  Wire.endTransmission();
+}
+ 
+ 
+// Initializations
+void setup(){
+  // Arduino initializations
+  Wire.begin();
+  SerialUSB.begin(9600);
+ 
+  // Configure gyroscope range
+  I2CwriteByte(MPU9250_ADDRESS,27,GYRO_FULL_SCALE_2000_DPS);
+  // Configure accelerometers range
+  I2CwriteByte(MPU9250_ADDRESS,28,ACC_FULL_SCALE_16_G);
+  // Set by pass mode for the magnetometers
+  I2CwriteByte(MPU9250_ADDRESS,0x37,0x02);
+ 
+  // Request first magnetometer single measurement
+  I2CwriteByte(MAG_ADDRESS,0x0A,0x01);
+
+ 
+
+}
+ 
+ 
+
+void loop(){
+ 
+    timePrev = time;  // the previous time is stored before the actual time read
+    time = millis();  // actual time read
+    elapsedTime = (time - timePrev) / 250; 
+  
+
+    mx -= -10;      //-9
+
+    my -= -29;      //-33
+
+    mz -= -70;
+
+
+
+    gyro_x -= 13;
+
+    gyro_y -= 25;
+
+    gyro_z -= -7;
+
+
+
+
+    
+  Gyr_Sec_X = gyro_x / 65.5;
+
+  Gyr_Sec_Y = gyro_y / 65.5;
+
+  Gyr_Sec_Z = gyro_z / 65.5;    
+
+
+
+
+
+/*
+ 
+
+ Gyr_Ang_Z = (Gyr_Ang_Z + Gyr_Sec_Z*elapsedTime);
+
+    
+if(Gyr_Ang_Z > 360){
+
+       Gyr_Ang_Z = 0;
+
+    }else if(Gyr_Ang_Z < 0){
+
+       Gyr_Ang_Z = 360;
+
+    }
+
+*/
+   
+
+
+   angle_pitch_acc = atan2 (acc_y ,( sqrt ((acc_x * acc_x) + (acc_z * acc_z))));
+   angle_roll_acc = atan2(-acc_x ,( sqrt((acc_y * acc_y) + (acc_z * acc_z))));
+
+
+
+   yM2 = (my * cos(angle_roll_acc)) - (mz * sin(angle_roll_acc));
+   xM2 = (mx * cos(angle_pitch_acc))+(my * sin(angle_roll_acc)*sin(angle_pitch_acc)) + (mz * cos(angle_roll_acc) * sin(angle_pitch_acc));
+
+
+
+   
+
+
+   heading = atan2(yM2, xM2)/0.0174532925; //You swich around the my and mx you invert.
+   heading += Declination;
+   if(heading < 0)heading+=360;
+   heading = 360-heading;    // N=0/360, E=90, S=180, W=270
+   
+
+
+   
+/*
+   if(heading <0){
+   heading += 360;
+   }else if(heading > 360){
+   heading -= 0;
+   }
+*/
+   
+
+   angle_roll_acc = angle_roll_acc * 57.3;
+   angle_pitch_acc = angle_pitch_acc * 57.3;
+
+   
+
+
+   Pitch = 0.98 *(Pitch  + Gyr_Sec_X *elapsedTime) + 0.02*angle_pitch_acc;
+   Roll = 0.98 *(Roll + Gyr_Sec_Y *elapsedTime) + 0.02*angle_roll_acc;
+  
+
+
+    USB_PC();
+    READ_MPU_9250();
+
+}
+
+
+void READ_MPU_9250(){
+
+ 
+  // ____________________________________
+  // :::  accelerometer and gyroscope ::: 
+ 
+  // Read accelerometer and gyroscope
+  uint8_t Buf[14];
+  I2Cread(MPU9250_ADDRESS,0x3B,14,Buf);
+ 
+ 
+  // Create 16 bits values from 8 bits data
+ 
+  // Accelerometer
+   acc_x = Buf[0]<<8 | Buf[1];
+   acc_y = Buf[2]<<8 | Buf[3];
+   acc_z = Buf[4]<<8 | Buf[5];
+
+  // Temperature
+   Tmp=Buf[6]<<8 | Buf[7];
+ 
+  // Gyroscope
+   gyro_x = Buf[8]<<8 | Buf[9];
+   gyro_y = Buf[10]<<8 | Buf[11];
+   gyro_z = Buf[12]<<8 | Buf[13];
+ 
+ 
+  // _____________________
+  // :::  Magnetometer ::: 
+ 
+ 
+  // Read register Status 1 and wait for the DRDY: Data Ready
+  uint8_t ST1;
+  do{
+    I2Cread(MAG_ADDRESS,0x02,1,&ST1);
+  }
+  while (!(ST1&0x01));
+ 
+  // Read magnetometer data  
+  uint8_t Mag[6];  
+  I2Cread(MAG_ADDRESS,0x03,6,Mag);
+ 
+  // Request next magnetometer single measurement
+  I2CwriteByte(MAG_ADDRESS,0x0A,0x01);
+ 
+ 
+  // Create 16 bits values from 8 bits data
+ 
+  // Magnetometer
+  mx = Mag[1]<<8 | Mag[0];
+  my = Mag[3]<<8 | Mag[2];
+  mz = Mag[5]<<8 | Mag[4];
+
+
+
+}
+
+    
+ 
+void USB_PC(){
+
+  //SerialUSB.print(" | Tmp = "); 
+  //SerialUSB.print(Tmp/340.00+36.53);  //equation for temperature in degrees C from datasheet
+
+  SerialUSB.print (" | Pitch = ");
+  SerialUSB.print (Pitch);
+  SerialUSB.print (" | Roll = ");
+  SerialUSB.print (Roll);  
+  SerialUSB.print ("         ");
+  SerialUSB.print (" | Yaw = "); 
+  SerialUSB.println(heading);  
+  
+  delay(50);    
+}
